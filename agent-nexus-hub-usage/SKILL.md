@@ -1,88 +1,182 @@
 ---
-name: agent-nexus-hub-usage
+
+## name: agent-nexus-hub-usage
 description: >-
-  Guides integration via Agent Nexus Gateway MVP for OpenAI-compatible downstream agents:
-  POST /api/v1/agents/register/openai, persist server-assigned agentId (UUID), POST /api/v1/orders,
-  POST /api/v1/agents/{agentId}/tasks/send with required orderId and message or jsonrpc,
-  optional GET snapshot card, POST order receipt. Hub, Gateway, receipt, OpenAI registration.
-  Core checklist in SKILL.md; registration fields, curl, discovery/pricing, receipt/errors in references/.
-  Does not document A2A paths (register/a2a, POST …/a2a, tasks polling) in the MVP narrative—see
-  gateway/src/api/routes.py and Vault Gateway 92-REST when required.
+  Register Hermes Agent into Agent Nexus Hub via OpenAI-compatible path.
+  Covers the full MVP flow: POST /api/v1/agents/register/openai,
+  POST /api/v1/orders, POST /api/v1/agents/{agentId}/tasks/send,
+  GET snapshot card, POST order receipt.
+  Includes working curl examples for every step.
 disable-model-invocation: true
----
 
-# Agent Nexus Hub（MVP｜OpenAI 下游）
+# Agent Nexus Hub — 注册 Hermes Agent
 
-实现以仓库 **`gateway/src/api/routes.py`** 为准。本文件是 **单一执行清单**：按序号做完即可打通「注册 → 下单 → 调用 → 收货」。
-
-## 本期不包含（避免与 MVP 混淆）
-
-**本 Skill 正文不展开** `POST /api/v1/agents/register/a2a`、`POST /api/v1/agents/{agentId}/a2a`、以及 **`GET /api/v1/a2a/tasks/{hubRequestId}`** 轮询等 A2A 专项流程；网关仍可能有这些路由，需要时直接读源码与 Vault `开发文档/Gateway/92-REST.md`。
+将 Hermes 原生 API Server 注册到 Agent Nexus Hub，打通「注册 → 下单 → 对话 → 收货」全流程。
 
 ---
 
-## 渐进式：何时打开 references
+## 前置条件
 
-| 场景 | 文件 |
-| --- | --- |
-| 填 `register/openai` 请求体 / `agentCard` | [references/openai-registration.md](references/openai-registration.md) |
-| 可复制 curl | [references/openai-curl-examples.md](references/openai-curl-examples.md) |
-| 目录发现、标价 | [references/discovery-and-pricing.md](references/discovery-and-pricing.md) |
-| 收货语义、自动收货、`hubRequestId`、错误码 | [references/operations-and-errors.md](references/operations-and-errors.md) |
+### 1. 确认 Hermes API Server 在运行
 
-更长叙述（Obsidian）：`Projects/AgentNexus/开发文档/Gateway/92-REST.md`、`95-注册存根.md`。可选：`scripts/`、`assets/` 占位目录，按需扩展。
+```bash
+curl -s http://127.0.0.1:8642/.well-known/agent.json 2>/dev/null || echo "Hermes API Server 未启动"
+```
+
+如果端口不是 8642，检查 `~/.hermes/.env`：
+
+```bash
+grep API_SERVER_PORT ~/.hermes/.env
+```
+
+### 2. 获取 API Key
+
+```bash
+grep API_SERVER_KEY ~/.hermes/.env
+```
+
+### 3. 确认 Gateway 在运行
+
+```bash
+curl -s http://127.0.0.1:8080/healthz
+```
 
 ---
 
 ## 不变量
 
-1. **Base URL**：`http://{GATEWAY_HOST}:{GATEWAY_PORT}`（默认 `127.0.0.1:8080`）。
-2. **禁止**在注册请求体中传入 `agentId`：**Hub 在 `201` 响应 JSON 中分配 `agentId`（UUID）**，须持久化；此后路径中的 `{agentId}` 均使用该值。
-3. **鉴权**：当前管理面多为开放 API；生产应为 `requesterId`、收货等接入身份方案。
+- **Gateway Base URL**：`http://127.0.0.1:8080`
+- **Hermes API Server**：`http://127.0.0.1:8642`（以 `API_SERVER_PORT` 为准）
+- **禁止**在注册请求体中传入 `agentId`——Hub 在 `201` 响应中分配 UUID
+- **注册协议**：`register/openai`，`openaiResponsesPath` 保持默认 `/v1/responses`
 
 ---
 
-## Hub `agentId` 占位（注册成功后回填）
+## 执行清单
 
-完成下方步骤 **1** 且拿到 **`201` 响应后**，把 JSON 里的 **`agentId`（UUID）** 填进本 Skill（或同步到 Cursor Rule / 环境变量 / 密钥库）。**后续凡写 `{agentId}`，均替换为该 UUID。**
+按序号执行，每步附可复制的 curl 命令。
 
-| 占位 | 填写 |
-| --- | --- |
-| **`HUB_AGENT_ID`** | `<粘贴 201 响应中的 agentId>` |
+### 1. 注册下游
+
+```bash
+curl -s -X POST "http://127.0.0.1:8080/api/v1/agents/register/openai" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "baseUrl": "http://127.0.0.1:8642",
+    "openaiResponsesPath": "/v1/responses",
+    "bearerToken": "723e1e1f34e9ca27a5d05ce0ca5549a9",
+    "agentCard": {
+      "name": "hermes-agent",
+      "description": "A self-improving AI agent powered by Hermes",
+      "version": "0.11.0",
+      "skills": [{
+        "id": "general",
+        "name": "General Assistant",
+        "description": "General-purpose AI assistant with tool use, web search, and more"
+      }]
+    }
+  }'
+```
+
+成功返回 `201`，记录响应中的 `**agentId**`（UUID）。以下步骤用 `{AGENT_ID}` 代替。
+
+### 2. 自检快照（推荐）
+
+```bash
+curl -s "http://127.0.0.1:8080/api/v1/agents/{AGENT_ID}/.well-known/agent.json"
+```
+
+核对 `baseUrl` 和 `openaiResponsesPath` 是否正确。
+
+### 3. 下单
+
+```bash
+curl -s -X POST "http://127.0.0.1:8080/api/v1/orders" \
+  -H "Content-Type: application/json" \
+  -d "{\"agentId\": \"{AGENT_ID}\", \"requesterId\": \"hermes-test\"}"
+```
+
+成功返回 `201`，记录 `**orderId**`。`requesterId` 强烈建议填写，否则无法收货。
+
+### 4. 发任务（对话）
+
+```bash
+curl -s -X POST "http://127.0.0.1:8080/api/v1/agents/{AGENT_ID}/tasks/send" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "orderId": "{ORDER_ID}",
+    "message": {
+      "model": "hermes-agent",
+      "input": "你好，请介绍一下你自己"
+    }
+  }'
+```
+
+**message 格式说明**：Gateway 从 `message` 中提取 `input`（字符串）或 A2A `parts[].text`，组装成 `{"input": "...", "stream": false, "model": "hermes-agent"}` 发给 Hermes 的 `/v1/responses`。传 `{"model": "...", "input": "..."}` 即可。
+
+同一 `orderId` 可多次调用 `tasks/send` 实现多轮对话。
+
+### 5. 收货
+
+任务成功后下游可在响应中加入 `"agentNexus": {"orderFinalize": true}` 触发订单进入 `pending_receipt`，然后：
+
+```bash
+curl -s -X POST "http://127.0.0.1:8080/api/v1/orders/{ORDER_ID}/receipt"
+```
+
+未主动 finalize 的订单会在 `ORDER_FINALIZE_TTL_SECONDS`（默认 72h）后自动流转。
 
 ---
 
-## MVP 执行清单（OpenAI）
+## 完整流程脚本
 
-1. **注册下游**  
-   `POST /api/v1/agents/register/openai`  
-   - 必填：`baseUrl`、嵌套 **`agentCard`**（细则见 [references/openai-registration.md](references/openai-registration.md)）。  
-   - 可选：`openaiResponsesPath`（默认 `/v1/responses`）、`bearerToken`、`quoteAmount` / `quoteCurrency`。  
-   - 成功 **`201`** → 读取响应体 **`agentId`**，并**回填**到上文 **`HUB_AGENT_ID`** 占位。
+一键运行（需先替换 `API_KEY` 和 `API_SERVER_PORT`）：
 
-2. **（推荐）自检快照**  
-   `GET /api/v1/agents/{agentId}/.well-known/agent.json`（`{agentId}` = **`HUB_AGENT_ID`**）  
-   - 返回注册时落库的 Card **快照**（非每次实时拉下游）。
+```bash
+#!/bin/bash
+GW="http://127.0.0.1:8080"
+HERMES="http://127.0.0.1:8642"
+KEY="723e1e1f34e9ca27a5d05ce0ca5549a9"
 
-3. **下单**  
-   `POST /api/v1/orders`  
-   - 必填：body 中 **`agentId`** = **`HUB_AGENT_ID`**。  
-   - **强烈建议**：`requesterId`（无则收货闭环可能失败，见 [references/operations-and-errors.md](references/operations-and-errors.md)）。  
-   - 成功 **`201`** → 保存 **`orderId`**。
+# 1. 注册
+REG=$(curl -s -X POST "$GW/api/v1/agents/register/openai" \
+  -H "Content-Type: application/json" \
+  -d "{\"baseUrl\":\"$HERMES\",\"openaiResponsesPath\":\"/v1/responses\",\"bearerToken\":\"$KEY\",\"agentCard\":{\"name\":\"hermes-agent\",\"description\":\"A self-improving AI agent powered by Hermes\",\"version\":\"0.11.0\",\"skills\":[{\"id\":\"general\",\"name\":\"General Assistant\",\"description\":\"General-purpose AI assistant with tool use, web search, and more\"}]}}")
+AID=$(echo "$REG" | python3 -c "import sys,json; print(json.load(sys.stdin)['agentId'])")
+echo "agentId: $AID"
 
-4. **发任务（调用下游）**  
-   `POST /api/v1/agents/{agentId}/tasks/send`（路径中 `{agentId}` = **`HUB_AGENT_ID`**）  
-   - **必填**：`orderId`（须对应同一 `agentId` 且订单可执行）；**`message`** 与 **`jsonrpc`** 二选一必填（不可都缺）。  
-   - 可选：`taskId`；请求头可传 **`x-hub-request-id`** 与响应 **`hubRequestId`** 对齐。  
-   - 网关将 OpenAI 协议请求映射为下游 **`POST {baseUrl}{openaiResponsesPath}`**（如 `/v1/responses`），与注册时 `bearerToken` 等一致。
+# 2. 下单
+ORD=$(curl -s -X POST "$GW/api/v1/orders" \
+  -H "Content-Type: application/json" \
+  -d "{\"agentId\":\"$AID\",\"requesterId\":\"hermes-test\"}")
+OID=$(echo "$ORD" | python3 -c "import sys,json; print(json.load(sys.stdin)['orderId'])")
+echo "orderId: $OID"
 
-5. **订单与收货**  
-   - 任务成功结束后订单进入 **`pending_receipt`**（通常需订单含 `requesterId`）；详见 [references/operations-and-errors.md](references/operations-and-errors.md)。  
-   - **确认收货**：`POST /api/v1/orders/{orderId}/receipt`。  
-   - 超时自动收货依赖 Redis 与配置（默认约 72h），见同 reference。
+# 3. 对话
+curl -s -X POST "$GW/api/v1/agents/$AID/tasks/send" \
+  -H "Content-Type: application/json" \
+  -d "{\"orderId\":\"$OID\",\"message\":{\"model\":\"hermes-agent\",\"input\":\"你好\"}}"
+```
 
 ---
 
-## 相关入口 Skill
+## 常见错误速查
 
-- **`register-openai-agent`**：关键词入口，正文指向本目录与 **references/openai-*.md**。
+
+| 现象                             | 原因                                                                       | 正确做法                                              |
+| ------------------------------ | ------------------------------------------------------------------------ | ------------------------------------------------- |
+| `-32601 Method not found`      | `baseUrl` 指向了 A2A 端口（8081）而非 API Server（8642）                            | 用 `grep API_SERVER_PORT ~/.hermes/.env` 确认端口      |
+| `400 Missing 'messages' field` | `openaiResponsesPath` 误填为 `/v1/chat/completions`                         | 保持默认 `/v1/responses`，Gateway 发的是 Responses API 格式 |
+| `Invalid API key`              | 没带 `bearerToken` 或 key 不对                                                | `grep API_SERVER_KEY ~/.hermes/.env` 获取正确 key     |
+| 订单卡 `executing` 无法收货           | **不是 bug**——支持多轮对话的设计，需下游返回 `agentNexus.orderFinalize: true` 或等 72h 自动流转 | 多轮结束后在下游响应加该字段                                    |
+
+
+---
+
+## 参考
+
+- 注册字段细则：[references/openai-registration.md](references/openai-registration.md)
+- 更多 curl 示例：[references/openai-curl-examples.md](references/openai-curl-examples.md)
+- 目录发现与标价：[references/discovery-and-pricing.md](references/discovery-and-pricing.md)
+- 收货、错误码：[references/operations-and-errors.md](references/operations-and-errors.md)
+
