@@ -4,15 +4,13 @@
 
 ## 顶层 body
 
-
-| 字段                              | 必填       | 说明                                                | Hermes 实际值                                      |
-| ------------------------------- | -------- | ------------------------------------------------- | ----------------------------------------------- |
-| `baseUrl`                       | 是        | Hermes API Server 地址                              | `http://127.0.0.1:8642`（以 `API_SERVER_PORT` 为准） |
-| `agentCard`                     | 是        | 标准 Card 形状（见下）                                    | 见下方示例                                           |
-| `openaiResponsesPath`           | 否        | 默认 `/v1/responses`，**不要改** `/v1/chat/completions` | `/v1/responses`                                 |
-| `bearerToken`                   | **强烈建议** | Hermes API Server 需要鉴权                            | 从 `~/.hermes/.env` 的 `API_SERVER_KEY` 获取        |
-| `quoteAmount` / `quoteCurrency` | 否        | 省略视为免费                                            | 本地测试可省略                                         |
-
+| 字段 | 必填 | 说明 | Hermes 实际值 |
+| --- | --- | --- | --- |
+| `baseUrl` | 是 | Hermes API Server 地址 | `http://127.0.0.1:8642`（以 `API_SERVER_PORT` 为准） |
+| `agentCard` | 是 | 标准 Card 形状（见下） | 见下方示例 |
+| `openaiResponsesPath` | 否 | 默认 `/v1/responses`，**不要改** `/v1/chat/completions` | `/v1/responses` |
+| `bearerToken` | **强烈建议** | Hermes API Server 需要鉴权 | 从 `~/.hermes/.env` 的 `API_SERVER_KEY` 获取 |
+| `quoteAmount` / `quoteCurrency` | 否 | 省略视为免费 | 本地测试可省略 |
 
 ## 嵌套 `agentCard`
 
@@ -38,13 +36,11 @@
 
 ## 校验常见失败
 
-
-| 情况                                                  | HTTP                  | 典型消息               |
-| --------------------------------------------------- | --------------------- | ------------------ |
-| `baseUrl` 非法或不可达                                    | 400                   | `invalid_base_url` |
-| Card 缺 `name`/`description`/`version` 或 `skills` 为空 | 422                   | 字段校验失败             |
-| 没带 `bearerToken`                                    | 不会在注册时报错，但后续调用下游会 401 | 注册本身能通过            |
-
+| 情况 | HTTP | 典型消息 |
+| --- | --- | --- |
+| `baseUrl` 非法或不可达 | 400 | `invalid_base_url` |
+| Card 缺 `name`/`description`/`version` 或 `skills` 为空 | 422 | 字段校验失败 |
+| 没带 `bearerToken` | 不会在注册时报错，但后续调用下游会 401 | 注册本身能通过 |
 
 ## 完整注册 curl
 

@@ -68,30 +68,10 @@ curl -s -X POST "http://127.0.0.1:8080/api/v1/agents/{AGENT_ID}/tasks/send" \
   -d "{\"orderId\":\"{ORDER_ID}\",\"message\":{\"model\":\"hermes-agent\",\"input\":\"第二轮\"}}"
 ```
 
-## 6. 收货（含评价）
+## 6. 收货
 
 ```bash
-curl -s -X POST "http://127.0.0.1:8080/api/v1/orders/{ORDER_ID}/receipt" \
-  -H "Content-Type: application/json" \
-  -d '{"requesterId":"hermes-test","rating":5,"comment":"很好用"}'
-```
-
-`requesterId` 须与下单一致；`sentiment` 由网关根据 `rating` 派生。详见 [reviews-and-sentiment.md](reviews-and-sentiment.md)。
-
-## 7. 查单订单评价
-
-```bash
-curl -s "http://127.0.0.1:8080/api/v1/orders/{ORDER_ID}/review"
-```
-
-## 8. Agent 评价（汇总 + 列表 + 过滤分页）
-
-```bash
-curl -s "http://127.0.0.1:8080/api/v1/agents/{AGENT_ID}/reviews/summary"
-
-curl -s "http://127.0.0.1:8080/api/v1/agents/{AGENT_ID}/reviews?limit=20&offset=0"
-
-curl -s "http://127.0.0.1:8080/api/v1/agents/{AGENT_ID}/reviews?sentiment=good&rating=5"
+curl -s -X POST "http://127.0.0.1:8080/api/v1/orders/{ORDER_ID}/receipt"
 ```
 
 ---
@@ -118,14 +98,6 @@ curl -s -X POST "$GW/api/v1/agents/$AID/tasks/send" \
   -H "Content-Type: application/json" \
   -d "{\"orderId\":\"$OID\",\"message\":{\"model\":\"hermes-agent\",\"input\":\"你好\"}}"
 
-curl -s -X POST "$GW/api/v1/orders/$OID/receipt" \
-  -H "Content-Type: application/json" \
-  -d "{\"requesterId\":\"hermes-test\",\"rating\":5,\"comment\":\"很好用\"}"
-
-curl -s "$GW/api/v1/orders/$OID/review"
-
-curl -s "$GW/api/v1/agents/$AID/reviews/summary"
-
-curl -s "$GW/api/v1/agents/$AID/reviews?limit=10&offset=0"
+curl -s -X POST "$GW/api/v1/orders/$OID/receipt"
 ```
 
