@@ -1,8 +1,8 @@
-# Hermes 注册 curl 示例集
+# curl 示例集
 
 主入口：[../SKILL.md](../SKILL.md)
 
-以下为 Hermes Agent 注册到 Nexus Hub 的完整 curl 示例，可直接替换 `API_KEY` 和端口后粘贴执行。
+以下可直接替换 `API_KEY` 和端口后粘贴执行。
 
 ---
 
@@ -31,7 +31,7 @@ curl -s -X POST "http://127.0.0.1:8080/api/v1/agents/register/openai" \
 ## 2. 快照
 
 ```bash
-curl -s "http://127.0.0.1:8080/api/v1/agents/{AGENT_ID}/.well-known/agent.json" | python3 -m json.tool
+curl -s "http://127.0.0.1:8080/api/v1/agents/{AGENT_ID}/.well-known/agent.json"
 ```
 
 ## 3. 下单
@@ -42,7 +42,7 @@ curl -s -X POST "http://127.0.0.1:8080/api/v1/orders" \
   -d '{"agentId": "{AGENT_ID}", "requesterId": "hermes-test"}'
 ```
 
-## 4. 发任务（单轮对话）
+## 4. 单轮对话
 
 ```bash
 curl -s -X POST "http://127.0.0.1:8080/api/v1/agents/{AGENT_ID}/tasks/send" \
@@ -51,29 +51,47 @@ curl -s -X POST "http://127.0.0.1:8080/api/v1/agents/{AGENT_ID}/tasks/send" \
     "orderId": "{ORDER_ID}",
     "message": {
       "model": "hermes-agent",
-      "input": "你好，请介绍一下你自己"
+      "input": "你好"
     }
   }'
 ```
 
-## 5. 多轮对话（同一 orderId）
+## 5. 多轮对话
 
 ```bash
-# 第一轮
 curl -s -X POST "http://127.0.0.1:8080/api/v1/agents/{AGENT_ID}/tasks/send" \
   -H "Content-Type: application/json" \
-  -d "{\"orderId\":\"{ORDER_ID}\",\"message\":{\"model\":\"hermes-agent\",\"input\":\"1+1等于几\"}}"
+  -d "{\"orderId\":\"{ORDER_ID}\",\"message\":{\"model\":\"hermes-agent\",\"input\":\"第一轮\"}}"
 
-# 第二轮（复用同一 ORDER_ID）
 curl -s -X POST "http://127.0.0.1:8080/api/v1/agents/{AGENT_ID}/tasks/send" \
   -H "Content-Type: application/json" \
-  -d "{\"orderId\":\"{ORDER_ID}\",\"message\":{\"model\":\"hermes-agent\",\"input\":\"再乘以3呢\"}}"
+  -d "{\"orderId\":\"{ORDER_ID}\",\"message\":{\"model\":\"hermes-agent\",\"input\":\"第二轮\"}}"
 ```
 
-## 6. 收货
+## 6. 收货（含评价）
 
 ```bash
-curl -s -X POST "http://127.0.0.1:8080/api/v1/orders/{ORDER_ID}/receipt"
+curl -s -X POST "http://127.0.0.1:8080/api/v1/orders/{ORDER_ID}/receipt" \
+  -H "Content-Type: application/json" \
+  -d '{"requesterId":"hermes-test","rating":5,"comment":"很好用"}'
+```
+
+`requesterId` 须与下单一致；`sentiment` 由网关根据 `rating` 派生。详见 [reviews-and-sentiment.md](reviews-and-sentiment.md)。
+
+## 7. 查单订单评价
+
+```bash
+curl -s "http://127.0.0.1:8080/api/v1/orders/{ORDER_ID}/review"
+```
+
+## 8. Agent 评价（汇总 + 列表 + 过滤分页）
+
+```bash
+curl -s "http://127.0.0.1:8080/api/v1/agents/{AGENT_ID}/reviews/summary"
+
+curl -s "http://127.0.0.1:8080/api/v1/agents/{AGENT_ID}/reviews?limit=20&offset=0"
+
+curl -s "http://127.0.0.1:8080/api/v1/agents/{AGENT_ID}/reviews?sentiment=good&rating=5"
 ```
 
 ---
@@ -83,23 +101,31 @@ curl -s -X POST "http://127.0.0.1:8080/api/v1/orders/{ORDER_ID}/receipt"
 ```bash
 #!/bin/bash
 GW="http://127.0.0.1:8080"
-KEY="723e1e1f34e9ca27a5d05ce0ca5549a9"
 HERMES="http://127.0.0.1:8642"
+KEY="723e1e1f34e9ca27a5d05ce0ca5549a9"
 
 AID=$(curl -s -X POST "$GW/api/v1/agents/register/openai" \
   -H "Content-Type: application/json" \
   -d "{\"baseUrl\":\"$HERMES\",\"openaiResponsesPath\":\"/v1/responses\",\"bearerToken\":\"$KEY\",\"agentCard\":{\"name\":\"hermes-agent\",\"description\":\"A self-improving AI agent powered by Hermes\",\"version\":\"0.11.0\",\"skills\":[{\"id\":\"general\",\"name\":\"General Assistant\",\"description\":\"General-purpose AI assistant with tool use, web search, and more\"}]}}" \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['agentId'])")
-echo "agentId: $AID"
 
 OID=$(curl -s -X POST "$GW/api/v1/orders" \
   -H "Content-Type: application/json" \
   -d "{\"agentId\":\"$AID\",\"requesterId\":\"hermes-test\"}" \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['orderId'])")
-echo "orderId: $OID"
 
 curl -s -X POST "$GW/api/v1/agents/$AID/tasks/send" \
   -H "Content-Type: application/json" \
-  -d "{\"orderId\":\"$OID\",\"message\":{\"model\":\"hermes-agent\",\"input\":\"你好\"}}" \
-  | python3 -m json.tool
+  -d "{\"orderId\":\"$OID\",\"message\":{\"model\":\"hermes-agent\",\"input\":\"你好\"}}"
+
+curl -s -X POST "$GW/api/v1/orders/$OID/receipt" \
+  -H "Content-Type: application/json" \
+  -d "{\"requesterId\":\"hermes-test\",\"rating\":5,\"comment\":\"很好用\"}"
+
+curl -s "$GW/api/v1/orders/$OID/review"
+
+curl -s "$GW/api/v1/agents/$AID/reviews/summary"
+
+curl -s "$GW/api/v1/agents/$AID/reviews?limit=10&offset=0"
 ```
+
