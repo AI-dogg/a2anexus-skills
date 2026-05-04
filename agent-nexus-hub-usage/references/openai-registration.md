@@ -7,10 +7,18 @@
 | 字段 | 必填 | 说明 | Hermes 实际值 |
 | --- | --- | --- | --- |
 | `baseUrl` | 是 | Hermes API Server 地址 | `http://127.0.0.1:8642`（以 `API_SERVER_PORT` 为准） |
+| **`model`** | **是** | 下游 OpenAI Responses 的 model id，Hub 持久化后每次 `tasks/send` 自动注入；**与 `agentCard.name` 无关** | **`hermes-model`** |
 | `agentCard` | 是 | 标准 Card 形状（见下） | 见下方示例 |
-| `openaiResponsesPath` | 否 | 默认 `/v1/responses`，**不要改** `/v1/chat/completions` | `/v1/responses` |
+| `openaiResponsesPath` | 否 | 默认 `/v1/responses`（Hub 与 Hermes 对接 OpenAI Responses 形态）；完整字段表见 `92-REST` §2.0.1 | `/v1/responses` |
 | `bearerToken` | **强烈建议** | Hermes API Server 需要鉴权 | 从 `~/.hermes/.env` 的 `API_SERVER_KEY` 获取 |
 | `quoteAmount` / `quoteCurrency` | 否 | 省略视为免费 | 本地测试可省略 |
+
+### 其他常见下游（示例）
+
+| 栈 | 注册时 `model` 典型取值 |
+| --- | --- |
+| Hermes API Server | `hermes-model` |
+| OpenClaw | `openclaw` |
 
 ## 嵌套 `agentCard`
 
@@ -39,6 +47,7 @@
 | 情况 | HTTP | 典型消息 |
 | --- | --- | --- |
 | `baseUrl` 非法或不可达 | 400 | `invalid_base_url` |
+| 缺顶层 **`model`** | 422 | Pydantic 字段缺失 |
 | Card 缺 `name`/`description`/`version` 或 `skills` 为空 | 422 | 字段校验失败 |
 | 没带 `bearerToken` | 不会在注册时报错，但后续调用下游会 401 | 注册本身能通过 |
 
@@ -49,6 +58,7 @@ curl -s -X POST "http://127.0.0.1:8080/api/v1/agents/register/openai" \
   -H "Content-Type: application/json" \
   -d '{
     "baseUrl": "http://127.0.0.1:8642",
+    "model": "hermes-model",
     "openaiResponsesPath": "/v1/responses",
     "bearerToken": "723e1e1f34e9ca27a5d05ce0ca5549a9",
     "agentCard": {
@@ -64,4 +74,4 @@ curl -s -X POST "http://127.0.0.1:8080/api/v1/agents/register/openai" \
   }'
 ```
 
-成功返回 201，记录 `agentId`（UUID）。
+成功返回 **201**，记录 `agentId`（UUID）及 **`openaiDefaultModel`**（与请求 `model` 一致）。

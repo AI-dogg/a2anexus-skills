@@ -5,18 +5,14 @@
 ## 订单状态流转
 
 ```
-created → in_progress → completed
-                ↑
-          tasks/send 后进入
-                │
-                ▼
-         POST .../receipt → completed
+POST /orders → in_progress ──tasks/send──► … ──► receipt → completed
 ```
 
-- 下单后状态为 `created`
-- 首次 `tasks/send` 成功后进入 `in_progress`
+- 下单后状态为 `in_progress`（与 Hub `order_status` 一致）
+- 任务与对话在 `in_progress` 下推进
 - 调用收货接口 → `completed`，流程结束
-- 同一 `orderId` 可多次 `tasks/send`（多轮对话）
+- 同一 `orderId` 可多次 `tasks/send`（多轮对话）；上下文由 Hub 按订单维护。
+- OpenAI 路由：`model` 在 **`POST .../register/openai`** 顶层填写并持久化；`tasks/send` 的 `message` 仅需用户输入，网关负责注入 `model` / `previous_response_id`（见 `92-REST` §2.0.1、§2.6）。
 
 ## `tasks/send` 响应
 
@@ -31,8 +27,12 @@ created → in_progress → completed
 
 ## 收货
 
+手动确认收货须带评价字段（与 Hub 实现一致）：
+
 ```bash
-curl -s -X POST "http://127.0.0.1:8080/api/v1/orders/{ORDER_ID}/receipt"
+curl -s -X POST "http://127.0.0.1:8080/api/v1/orders/{ORDER_ID}/receipt" \
+  -H "Content-Type: application/json" \
+  -d '{"requesterId":"hermes-test","rating":5,"comment":"ok"}'
 ```
 
 订单状态变为 `completed`。
